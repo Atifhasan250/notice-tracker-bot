@@ -50,10 +50,6 @@ URLS_TO_TRACK.forEach(url => websiteStates[url] = "");
 //            CORE FUNCTIONS
 // ==========================================
 
-// ==========================================
-//            CORE FUNCTIONS
-// ==========================================
-
 async function sendTelegramAlert(message) {
     const apiUrl = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
 
