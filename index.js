@@ -6,6 +6,28 @@ const axios = require('axios');
 const Diff = require('diff');
 const express = require('express');
 const app = express();
+const mongoose = require('mongoose');
+
+
+// ==========================================
+//             MONGODB CONNECTION
+// ==========================================
+async function connectDB() {
+    try {
+        await mongoose.connect(process.env.MONGODB_URI);
+        console.log("✅ Connected to MongoDB Atlas");
+    } catch (err) {
+        console.error("❌ MongoDB Connection Error:", err.message);
+        process.exit(1); // কানেকশন না হলে অ্যাপ বন্ধ করে দিবে
+    }
+}
+connectDB();
+
+const SiteSchema = new mongoose.Schema({
+    url: { type: String, unique: true },
+    lastText: String
+});
+const Site = mongoose.model('Site', SiteSchema);
 
 
 // This gives Render a webpage to look at so it doesn't shut your bot down
@@ -25,9 +47,7 @@ puppeteer.use(StealthPlugin());
 // ==========================================
 //              CONFIGURATION
 // ==========================================
-// ==========================================
-//              CONFIGURATION
-// ==========================================
+
 const BOT_TOKEN = process.env.BOT_TOKEN;
 
 // Put your ID, and any friends' IDs here inside quotes, separated by commas!
@@ -71,14 +91,20 @@ async function sendTelegramAlert(message) {
 function extractVisibleText(htmlContent) {
     const $ = cheerio.load(htmlContent);
 
-    // Remove invisible elements and code blocks
+    // অপ্রয়োজনীয় এলিমেন্ট রিমুভ করা
     $('script, style, noscript, meta, header, footer').remove();
 
-    // Extract text, split by lines, trim spaces, and remove empty lines
     const text = $('body').text();
     const cleanLines = text.split('\n')
         .map(line => line.trim())
-        .filter(line => line.length > 0);
+        .filter(line => {
+            // ফিল্টার: খালি লাইন এবং Cloudflare/Ray ID যুক্ত লাইন বাদ দেওয়া
+            const isInvalid =
+                line.length === 0 ||
+                line.includes("Ray ID:") ||
+                line.includes("Cloudflare");
+            return !isInvalid;
+        });
 
     return cleanLines.join('\n');
 }
@@ -88,8 +114,13 @@ async function checkWebsites() {
 
     // Launch an actual invisible browser
     const browser = await puppeteer.launch({
-        headless: "new",
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        headless: "shell",
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage', // এটি Render-এর মেমোরি ক্রাশ রোধ করে
+            '--disable-gpu'
+        ]
     });
 
     const page = await browser.newPage();
@@ -108,12 +139,6 @@ async function checkWebsites() {
             if (currentText !== previousText) {
                 const isInitialRun = (previousText === "");
 
-                if (isInitialRun) {
-                    console.log(`✅ Initial text fetched for ${url}`);
-                } else {
-                    console.log(`⚠️ Change detected on ${url}!`);
-                }
-
                 // Compare changes
                 const differences = Diff.diffLines(previousText, currentText);
                 let addedLines = [];
@@ -125,26 +150,39 @@ async function checkWebsites() {
                     if (part.removed) deletedLines.push(...lines);
                 });
 
-                // Format the time
                 const currentTime = new Date().toLocaleString('en-US', { timeZone: 'Asia/Dhaka' });
 
                 if (isInitialRun) {
                     const alertText =
                         `✅ <b>প্রাথমিক চেক সম্পন্ন!</b>\n\n` +
                         `🔗 <b>লিঙ্ক:</b> ${url}\n\n` +
-                        `⏰ <b>সময়:</b> ${currentTime}`;
+                        `⏰ <b>সময়:</b> ${currentTime}`;
                     await sendTelegramAlert(alertText);
                 } else {
+                    // শুধুমাত্র তখনই মেসেজ দিবে যদি সত্যিই কোনো লাইন যোগ বা বিয়োগ হয়
+                    if (addedLines.length > 0 || deletedLines.length > 0) {
+                        let diffMessage = "";
 
-                    const alertText =
-                        `🔔 <b>ওয়েবসাইটে পরিবর্তন শনাক্ত হয়েছে!</b>\n\n` +
-                        `🔗 <b>লিঙ্ক:</b> ${url}\n\n` +
-                        `⏰ <b>সময়:</b> ${currentTime}\n\n`;
+                        if (addedLines.length > 0) {
+                            diffMessage += `➕ <b>নতুন কি যুক্ত হয়েছে:</b>\n${addedLines.slice(0, 5).join('\n')}\n\n`;
+                        }
 
-                    await sendTelegramAlert(alertText);
+                        if (deletedLines.length > 0) {
+                            diffMessage += `➖ <b>কি বাদ দেওয়া হয়েছে:</b>\n${deletedLines.slice(0, 5).join('\n')}\n\n`;
+                        }
+
+                        const alertText =
+                            `🔔 <b>ওয়েবসাইটে পরিবর্তন শনাক্ত হয়েছে!</b>\n\n` +
+                            `🔗 <b>লিঙ্ক:</b> ${url}\n\n` +
+                            `⏰ <b>সময়:</b> ${currentTime}\n\n` +
+                            diffMessage;
+
+                        await sendTelegramAlert(alertText);
+                    }
                 }
 
                 websiteStates[url] = currentText;
+
             } else {
                 console.log(`Checked ${url} - No changes.`);
             }
@@ -154,7 +192,7 @@ async function checkWebsites() {
     }
 
     await browser.close();
-    console.log("--- Cycle complete. Waiting 5 minutes... ---");
+    console.log("--- Cycle complete. Waiting 10 minutes... ---");
 }
 
 // ==========================================
@@ -168,8 +206,8 @@ async function startTracker() {
     // Run immediately
     await checkWebsites();
 
-    // Then run every 300 seconds
-    setInterval(checkWebsites, 5 * 60 * 1000);
+    // Then run every 600 seconds
+    setInterval(checkWebsites, 10 * 60 * 1000);
 }
 
 startTracker();
