@@ -33,7 +33,11 @@ npm install
 **3. Environment Variables**
 Create a `.env` file in the root directory and add your Telegram Bot Token (obtained from [@BotFather](https://t.me/botfather)):
 ```env
-BOT_TOKEN=your_telegram_bot_token_here
+BOT_TOKEN=YOUR_BOT_TOKEN_HERE
+
+PUPPETEER_CACHE_DIR=/opt/render/project/src/.cache/puppeteer
+
+MONGODB_URI=YOUR_MONGODB_URI_HERE
 ```
 
 **4. Configuration**
@@ -45,8 +49,15 @@ Open `bot.js` and update the following arrays to match your needs:
 
 To run the bot locally:
 ```bash
+npm run dev
+```
+
+or,
+```bash
 npm start
 ```
+
+
 The bot will immediately fetch the initial state of the websites, send a confirmation message to all configured Chat IDs, and begin checking for updates every 5 minutes.
 
 ## ☁️ Deployment (Free 24/7 Hosting)

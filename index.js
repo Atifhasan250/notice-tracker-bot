@@ -18,7 +18,7 @@ async function connectDB() {
         console.log("✅ Connected to MongoDB Atlas");
     } catch (err) {
         console.error("❌ MongoDB Connection Error:", err.message);
-        process.exit(1); // কানেকশন না হলে অ্যাপ বন্ধ করে দিবে
+        process.exit(1);
     }
 }
 connectDB();
@@ -50,7 +50,6 @@ puppeteer.use(StealthPlugin());
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 
-// Put your ID, and any friends' IDs here inside quotes, separated by commas!
 const CHAT_IDS = [
     "6112202394",
     "7122512716"
@@ -66,6 +65,93 @@ const URLS_TO_TRACK = [
 let websiteStates = {};
 URLS_TO_TRACK.forEach(url => websiteStates[url] = "");
 
+// Global browser instance for reuse (memory optimization)
+let globalBrowser = null;
+
+// ==========================================
+//         LOAD INITIAL STATE FROM DB
+// ==========================================
+async function loadInitialStates() {
+    try {
+        const sites = await Site.find({});
+        sites.forEach(site => {
+            if (URLS_TO_TRACK.includes(site.url)) {
+                websiteStates[site.url] = site.lastText || "";
+                console.log(`✅ Loaded state for: ${site.url}`);
+            }
+        });
+        console.log("✅ Initial states loaded from MongoDB");
+    } catch (err) {
+        console.error("❌ Error loading initial states:", err.message);
+    }
+}
+
+// ==========================================
+//         SAVE STATE TO DB
+// ==========================================
+async function saveStateToDb(url, text) {
+    try {
+        await Site.findOneAndUpdate(
+            { url: url },
+            { lastText: text },
+            { upsert: true, returnDocument: 'after' }
+        );
+        console.log(`💾 Saved state to DB for: ${url}`);
+    } catch (err) {
+        console.error(`❌ Error saving state to DB for ${url}:`, err.message);
+    }
+}
+
+// ==========================================
+//    BROWSER MANAGEMENT (Memory Optimized)
+// ==========================================
+async function getBrowser() {
+    // যদি browser আগে থেকে চালু থাকে এবং connected থাকে
+    if (globalBrowser && globalBrowser.isConnected()) {
+        return globalBrowser;
+    }
+
+    // নতুন browser launch করো (memory-optimized settings)
+    try {
+        globalBrowser = await puppeteer.launch({
+            headless: "shell",
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--disable-software-rasterizer',
+                '--disable-extensions',
+                '--disable-background-networking',
+                '--disable-background-timer-throttling',
+                '--disable-backgrounding-occluded-windows',
+                '--disable-breakpad',
+                '--disable-component-extensions-with-background-pages',
+                '--disable-features=TranslateUI,BlinkGenPropertyTrees',
+                '--disable-ipc-flooding-protection',
+                '--disable-renderer-backgrounding',
+                '--enable-features=NetworkService,NetworkServiceInProcess',
+                '--force-color-profile=srgb',
+                '--hide-scrollbars',
+                '--metrics-recording-only',
+                '--mute-audio',
+                '--no-first-run',
+                '--disable-default-apps',
+                '--no-zygote',
+                '--single-process',
+                // Cloudflare bypass করার জন্য extra flags
+                '--disable-blink-features=AutomationControlled',
+                '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            ]
+        });
+        console.log("✅ Browser launched successfully");
+        return globalBrowser;
+    } catch (err) {
+        console.error("❌ Failed to launch browser:", err.message);
+        return null;
+    }
+}
+
 // ==========================================
 //            CORE FUNCTIONS
 // ==========================================
@@ -73,7 +159,6 @@ URLS_TO_TRACK.forEach(url => websiteStates[url] = "");
 async function sendTelegramAlert(message) {
     const apiUrl = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
 
-    // Loop through every ID in the list and send the message
     for (const chatId of CHAT_IDS) {
         try {
             await axios.post(apiUrl, {
@@ -91,17 +176,16 @@ async function sendTelegramAlert(message) {
 function extractVisibleText(htmlContent) {
     const $ = cheerio.load(htmlContent);
 
-    // অপ্রয়োজনীয় এলিমেন্ট রিমুভ করা
     $('script, style, noscript, meta, header, footer').remove();
 
     const text = $('body').text();
     const cleanLines = text.split('\n')
         .map(line => line.trim())
         .filter(line => {
-            // ফিল্টার: খালি লাইন এবং Cloudflare/Ray ID যুক্ত লাইন বাদ দেওয়া
             const isInvalid =
                 line.length === 0 ||
                 line.includes("Ray ID:") ||
+                line.includes("Performance and Security by CloudflarePrivacy") ||
                 line.includes("Cloudflare");
             return !isInvalid;
         });
@@ -112,86 +196,153 @@ function extractVisibleText(htmlContent) {
 async function checkWebsites() {
     console.log("\n--- Starting checking cycle ---");
 
-    // Launch an actual invisible browser
-    const browser = await puppeteer.launch({
-        headless: "shell",
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage', // এটি Render-এর মেমোরি ক্রাশ রোধ করে
-            '--disable-gpu'
-        ]
-    });
+    const browser = await getBrowser();
+    if (!browser) {
+        console.error("❌ Browser not available, skipping this cycle");
+        return;
+    }
 
-    const page = await browser.newPage();
-    // Set a realistic viewport
-    await page.setViewport({ width: 1280, height: 720 });
+    let page;
+    try {
+        page = await browser.newPage();
 
-    for (const url of URLS_TO_TRACK) {
-        try {
-            // waitUntil: 'networkidle2' waits until the page is fully loaded and Cloudflare is done
-            await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
-            const html = await page.content();
+        // Cloudflare bypass: Extra stealth measures
+        await page.evaluateOnNewDocument(() => {
+            // webdriver property hide করো
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => false,
+            });
 
-            const currentText = extractVisibleText(html);
-            const previousText = websiteStates[url];
+            // Chrome runtime hide করো
+            window.chrome = {
+                runtime: {},
+            };
 
-            if (currentText !== previousText) {
-                const isInitialRun = (previousText === "");
+            // Permissions query করো
+            const originalQuery = window.navigator.permissions.query;
+            window.navigator.permissions.query = (parameters) => (
+                parameters.name === 'notifications' ?
+                    Promise.resolve({ state: Notification.permission }) :
+                    originalQuery(parameters)
+            );
+        });
 
-                // Compare changes
-                const differences = Diff.diffLines(previousText, currentText);
-                let addedLines = [];
-                let deletedLines = [];
+        // Memory optimization
+        await page.setViewport({ width: 1280, height: 720 });
+        await page.setRequestInterception(true);
 
-                differences.forEach(part => {
-                    const lines = part.value.split('\n').filter(l => l.trim() !== '');
-                    if (part.added) addedLines.push(...lines);
-                    if (part.removed) deletedLines.push(...lines);
-                });
+        // Block unnecessary resources to save RAM (কিন্তু script allow করো Cloudflare এর জন্য)
+        page.on('request', (req) => {
+            const resourceType = req.resourceType();
+            // শুধু image আর font block করছি, CSS/JS চলতে দাও
+            if (['image', 'font', 'media'].includes(resourceType)) {
+                req.abort();
+            } else {
+                req.continue();
+            }
+        });
 
-                const currentTime = new Date().toLocaleString('en-US', { timeZone: 'Asia/Dhaka' });
+        for (const url of URLS_TO_TRACK) {
+            try {
+                console.log(`Navigating to: ${url}`);
+                await page.goto(url, { waitUntil: 'networkidle2', timeout: 45000 });
 
-                if (isInitialRun) {
-                    const alertText =
-                        `✅ <b>প্রাথমিক চেক সম্পন্ন!</b>\n\n` +
-                        `🔗 <b>লিঙ্ক:</b> ${url}\n\n` +
-                        `⏰ <b>সময়:</b> ${currentTime}`;
-                    await sendTelegramAlert(alertText);
-                } else {
-                    // শুধুমাত্র তখনই মেসেজ দিবে যদি সত্যিই কোনো লাইন যোগ বা বিয়োগ হয়
-                    if (addedLines.length > 0 || deletedLines.length > 0) {
-                        let diffMessage = "";
+                // Cloudflare bypass: Multiple attempts with increasing wait time
+                let attempts = 0;
+                let maxAttempts = 3;
+                let bodyText = await page.evaluate(() => document.body.innerText);
 
-                        if (addedLines.length > 0) {
-                            diffMessage += `➕ <b>নতুন কি যুক্ত হয়েছে:</b>\n${addedLines.slice(0, 5).join('\n')}\n\n`;
-                        }
+                while ((bodyText.includes('security verification') ||
+                    bodyText.includes('Cloudflare') ||
+                    bodyText.includes('Performing security')) &&
+                    attempts < maxAttempts) {
 
-                        if (deletedLines.length > 0) {
-                            diffMessage += `➖ <b>কি বাদ দেওয়া হয়েছে:</b>\n${deletedLines.slice(0, 5).join('\n')}\n\n`;
-                        }
+                    attempts++;
+                    const waitTime = 15000 * attempts; // 15s, 30s, 45s
+                    console.log(`⏳ Cloudflare detected on ${url}, attempt ${attempts}/${maxAttempts}, waiting ${waitTime / 1000} seconds...`);
 
-                        const alertText =
-                            `🔔 <b>ওয়েবসাইটে পরিবর্তন শনাক্ত হয়েছে!</b>\n\n` +
-                            `🔗 <b>লিঙ্ক:</b> ${url}\n\n` +
-                            `⏰ <b>সময়:</b> ${currentTime}\n\n` +
-                            diffMessage;
+                    await new Promise(resolve => setTimeout(resolve, waitTime));
 
-                        await sendTelegramAlert(alertText);
-                    }
+                    // Page refresh করে আবার check করো
+                    await page.reload({ waitUntil: 'networkidle2', timeout: 45000 });
+                    bodyText = await page.evaluate(() => document.body.innerText);
                 }
 
-                websiteStates[url] = currentText;
+                // যদি এখনো Cloudflare page থাকে, warning দাও কিন্তু continue করো
+                if (bodyText.includes('security verification') ||
+                    bodyText.includes('Cloudflare') ||
+                    bodyText.includes('Performing security')) {
+                    console.log(`⚠️ Could not bypass Cloudflare on ${url} after ${maxAttempts} attempts. Saving what we have.`);
+                }
 
-            } else {
-                console.log(`Checked ${url} - No changes.`);
+                const html = await page.content();
+
+                const currentText = extractVisibleText(html);
+                const previousText = websiteStates[url];
+
+                if (currentText !== previousText) {
+                    const isInitialRun = (previousText === "");
+
+                    const differences = Diff.diffLines(previousText, currentText);
+                    let addedLines = [];
+                    let deletedLines = [];
+
+                    differences.forEach(part => {
+                        const lines = part.value.split('\n').filter(l => l.trim() !== '');
+                        if (part.added) addedLines.push(...lines);
+                        if (part.removed) deletedLines.push(...lines);
+                    });
+
+                    const currentTime = new Date().toLocaleString('en-US', { timeZone: 'Asia/Dhaka' });
+
+                    if (isInitialRun) {
+                        const alertText =
+                            `✅ <b>প্রাথমিক চেক সম্পন্ন!</b>\n\n` +
+                            `🔗 <b>লিঙ্ক:</b> ${url}\n\n` +
+                            `⏰ <b>সময়:</b> ${currentTime}`;
+                        await sendTelegramAlert(alertText);
+                    } else {
+                        if (addedLines.length > 0 || deletedLines.length > 0) {
+                            let diffMessage = "";
+
+                            if (addedLines.length > 0) {
+                                diffMessage += `➕ <b>নতুন কি যুক্ত হয়েছে:</b>\n${addedLines.slice(0, 5).join('\n')}\n\n`;
+                            }
+
+                            if (deletedLines.length > 0) {
+                                diffMessage += `➖ <b>কি বাদ দেওয়া হয়েছে:</b>\n${deletedLines.slice(0, 5).join('\n')}\n\n`;
+                            }
+
+                            const alertText =
+                                `🔔 <b>ওয়েবসাইটে পরিবর্তন শনাক্ত হয়েছে!</b>\n\n` +
+                                `🔗 <b>লিঙ্ক:</b> ${url}\n\n` +
+                                `⏰ <b>সময়:</b> ${currentTime}\n\n` +
+                                diffMessage;
+
+                            await sendTelegramAlert(alertText);
+                        }
+                    }
+
+                    websiteStates[url] = currentText;
+                    await saveStateToDb(url, currentText);
+
+                } else {
+                    console.log(`Checked ${url} - No changes.`);
+                }
+            } catch (error) {
+                console.error(`❌ Error checking ${url}:`, error.message);
+                continue;
             }
-        } catch (error) {
-            console.error(`❌ Error checking ${url}:`, error.message);
+        }
+    } catch (error) {
+        console.error("❌ Error in checking cycle:", error.message);
+    } finally {
+        // Page cleanup to prevent memory leak
+        if (page) {
+            await page.close();
         }
     }
 
-    await browser.close();
     console.log("--- Cycle complete. Waiting 10 minutes... ---");
 }
 
@@ -201,12 +352,13 @@ async function checkWebsites() {
 
 async function startTracker() {
     console.log("🚀 Examify Notice Tracker is starting...");
-    await sendTelegramAlert("✅ <b>Examify Notice Tracker is now online!</b>\nFetching initial data...");
 
-    // Run immediately
+    await loadInitialStates();
+
+    console.log("✅ Examify Notice Tracker is now online! Ready to track changes.");
+
     await checkWebsites();
 
-    // Then run every 600 seconds
     setInterval(checkWebsites, 10 * 60 * 1000);
 }
 
