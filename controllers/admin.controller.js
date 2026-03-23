@@ -81,8 +81,54 @@ async function getAllAdmins() {
 }
 
 // ==========================================
-//         CHECK IF USER IS AUTHORIZED
+//         BAN A USER
 // ==========================================
+async function banUser(chatId) {
+    try {
+        const user = await User.findOneAndUpdate(
+            { chatId: Number(chatId) },
+            { chatId: Number(chatId), isBanned: true, isAuthorized: false },
+            { upsert: true, returnDocument: 'after' }
+        );
+        return user;
+    } catch (err) {
+        console.error("❌ Error banning user:", err.message);
+        return null;
+    }
+}
+
+// ==========================================
+//         UNBAN A USER
+// ==========================================
+async function unbanUser(chatId) {
+    try {
+        // শুধু banned user কেই unban করা যাবে
+        const user = await User.findOneAndUpdate(
+            { chatId: Number(chatId), isBanned: true },
+            { isBanned: false },
+            { returnDocument: 'after' }
+        );
+        return user;
+    } catch (err) {
+        console.error("❌ Error unbanning user:", err.message);
+        return null;
+    }
+}
+
+// ==========================================
+//         CHECK IF USER IS BANNED
+// ==========================================
+async function isBannedUser(chatId) {
+    try {
+        const user = await User.findOne({ chatId: Number(chatId), isBanned: true });
+        return !!user;
+    } catch (err) {
+        console.error("❌ Error checking ban status:", err.message);
+        return false;
+    }
+}
+
+
 async function isAuthorized(chatId) {
     try {
         const user = await User.findOne({ chatId: Number(chatId), isAuthorized: true });
@@ -234,6 +280,9 @@ module.exports = {
     removeAdmin,
     getAllAdmins,
     isAuthorized,
+    isBannedUser,
+    banUser,
+    unbanUser,
     saveApplication,
     approveUser,
     addUser,

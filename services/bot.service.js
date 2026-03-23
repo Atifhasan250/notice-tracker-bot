@@ -7,6 +7,9 @@ const {
     removeAdmin,
     getAllAdmins,
     isAuthorized,
+    isBannedUser,
+    banUser,
+    unbanUser,
     saveApplication,
     approveUser,
     addUser,
@@ -50,6 +53,12 @@ function setupBotCommands(bot) {
     bot.onText(/^\/start$/, async (msg) => {
         const chatId = msg.chat.id;
 
+        // চেক করা হচ্ছে ইউজার banned কিনা
+        if (await isBannedUser(chatId)) {
+            bot.sendMessage(chatId, "🚫 You have been banned from using this bot.");
+            return;
+        }
+
         // চেক করা হচ্ছে ইউজার আগে থেকেই অথোরাইজড কিনা (DB থেকে)
         const authorized = await isAuthorized(chatId);
         if (authorized) {
@@ -67,6 +76,12 @@ function setupBotCommands(bot) {
     // ==========================================
     bot.onText(/^\/apply$/, async (msg) => {
         const applicantChatId = msg.chat.id;
+
+        // চেক করা হচ্ছে ইউজার banned কিনা
+        if (await isBannedUser(applicantChatId)) {
+            bot.sendMessage(applicantChatId, "🚫 You have been banned from using this bot.");
+            return;
+        }
 
         // চেক করা হচ্ছে ইউজার আগে থেকেই অথোরাইজড কিনা (DB থেকে)
         const authorized = await isAuthorized(applicantChatId);
@@ -300,7 +315,72 @@ function setupBotCommands(bot) {
     });
 
     // ==========================================
-    // ১০. /addnewadmin <chatId> — শুধু primary admin
+    // ১০. /ban <chatId> — যেকোনো অ্যাডমিন
+    // ==========================================
+    bot.onText(/^\/ban (.+)$/, async (msg, match) => {
+        const chatId = msg.chat.id;
+
+        if (!await isAdmin(chatId)) {
+            bot.sendMessage(chatId, "⛔ Only admins can use this command.");
+            return;
+        }
+
+        const targetChatId = match[1].trim();
+
+        // নিজেকে ban করা যাবে না
+        if (String(targetChatId) === String(chatId)) {
+            bot.sendMessage(chatId, "⛔ You cannot ban yourself.");
+            return;
+        }
+
+        // অন্য অ্যাডমিনকে ban করা যাবে না
+        if (await isAdmin(targetChatId)) {
+            bot.sendMessage(chatId, "⛔ You cannot ban an admin.");
+            return;
+        }
+
+        const user = await banUser(targetChatId);
+
+        if (user) {
+            bot.sendMessage(chatId, `🚫 User ${targetChatId} has been banned successfully.`);
+            bot.sendMessage(targetChatId, "🚫 You have been banned from using this bot.").catch(() => { });
+        } else {
+            bot.sendMessage(chatId, `❌ Failed to ban user ${targetChatId}.`);
+        }
+    });
+
+    // ==========================================
+    // ১১. /unban <chatId> — যেকোনো অ্যাডমিন
+    // ==========================================
+    bot.onText(/^\/unban (.+)$/, async (msg, match) => {
+        const chatId = msg.chat.id;
+
+        if (!await isAdmin(chatId)) {
+            bot.sendMessage(chatId, "⛔ Only admins can use this command.");
+            return;
+        }
+
+        const targetChatId = match[1].trim();
+
+        // শুধু banned user কেই unban করা যাবে
+        const banned = await isBannedUser(targetChatId);
+        if (!banned) {
+            bot.sendMessage(chatId, `❌ User ${targetChatId} is not banned.`);
+            return;
+        }
+
+        const user = await unbanUser(targetChatId);
+
+        if (user) {
+            bot.sendMessage(chatId, `✅ User ${targetChatId} has been unbanned successfully.`);
+            bot.sendMessage(targetChatId, "✅ You have been unbanned. You can now use /apply to request access again.").catch(() => { });
+        } else {
+            bot.sendMessage(chatId, `❌ Failed to unban user ${targetChatId}.`);
+        }
+    });
+
+    // ==========================================
+    // ১২. /addnewadmin <chatId> — শুধু primary admin
     // ==========================================
     bot.onText(/^\/addnewadmin (.+)$/, async (msg, match) => {
         const chatId = msg.chat.id;
@@ -408,7 +488,9 @@ function setupBotCommands(bot) {
         message += `/listusers — List all authorized and pending users\n`;
         message += `/approve &lt;chatId&gt; — Approve a pending user\n`;
         message += `/adduser &lt;chatId&gt; — Authorize a user directly\n`;
-        message += `/removeuser &lt;chatId&gt; — Revoke a user's access\n\n`;
+        message += `/removeuser &lt;chatId&gt; — Remove a user completely\n`;
+        message += `/ban &lt;chatId&gt; — Ban a user from the bot\n`;
+        message += `/unban &lt;chatId&gt; — Unban a banned user\n\n`;
 
         message += `🔗 <b>URL Management</b>\n`;
         message += `/listurls — List all tracked URLs\n`;

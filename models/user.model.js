@@ -5,6 +5,7 @@ const UserSchema = new mongoose.Schema({
     fullName: { type: String, default: 'Unknown Name' },
     username: { type: String, default: 'No username' },
     isAuthorized: { type: Boolean, default: false },
+    isBanned: { type: Boolean, default: false },
     appliedAt: { type: Date, default: Date.now }
 });
 
