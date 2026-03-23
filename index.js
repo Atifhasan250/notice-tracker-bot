@@ -26,7 +26,7 @@ async function startTracker() {
 
     await checkWebsites();
 
-    setInterval(checkWebsites, 10 * 1000);
+    setInterval(checkWebsites, 5 * 60 * 1000);
 }
 
 startTracker();
