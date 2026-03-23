@@ -24,6 +24,15 @@ function initBot() {
     const bot = new TelegramBot(BOT_TOKEN, { polling: true });
     console.log("✅ Telegram Bot is running and listening for commands...");
 
+    // একাধিক instance চললে clean error দেখানো হচ্ছে
+    bot.on('polling_error', (error) => {
+        if (error.code === 'ETELEGRAM' && error.message.includes('409 Conflict')) {
+            console.error("❌ Bot polling conflict: Another instance is already running. Stop the other instance.");
+        } else {
+            console.error("❌ Bot polling error:", error.message);
+        }
+    });
+
     setupBotCommands(bot);
     setupCallbackHandlers(bot);
 
@@ -162,6 +171,19 @@ function setupBotCommands(bot) {
         }
 
         const targetChatId = match[1].trim();
+
+        // নিজেকে remove করা যাবে না
+        if (String(targetChatId) === String(chatId)) {
+            bot.sendMessage(chatId, "⛔ You cannot remove yourself.");
+            return;
+        }
+
+        // অ্যাডমিনকে remove করা যাবে না
+        if (await isAdmin(targetChatId)) {
+            bot.sendMessage(chatId, "⛔ You cannot remove an admin. Use /removeadmin first to revoke their admin access.");
+            return;
+        }
+
         const user = await removeUser(targetChatId);
 
         if (user) {
@@ -425,6 +447,19 @@ function setupCallbackHandlers(bot) {
         // approve_{chatId} callback handle করা হচ্ছে
         if (data.startsWith('approve_')) {
             const targetChatId = data.replace('approve_', '');
+
+            // আগেই approve হয়ে গেছে কিনা চেক করা হচ্ছে
+            const alreadyApproved = await isAuthorized(targetChatId);
+            if (alreadyApproved) {
+                bot.answerCallbackQuery(callbackQuery.id, { text: "✅ Already approved by another admin." });
+                // বাটন সরিয়ে দেওয়া হচ্ছে
+                bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+                    chat_id: chatId,
+                    message_id: messageId
+                }).catch(() => { });
+                return;
+            }
+
             const user = await approveUser(targetChatId);
 
             if (user) {
