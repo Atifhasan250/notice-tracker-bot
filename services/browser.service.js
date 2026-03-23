@@ -20,6 +20,7 @@ async function getBrowser() {
     try {
         globalBrowser = await puppeteer.launch({
             headless: "shell",
+            // executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', // Windows এ Chrome এর path (যদি system-installed Chrome ব্যবহার করতে চাও)
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
