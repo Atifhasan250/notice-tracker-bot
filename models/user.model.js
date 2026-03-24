@@ -7,6 +7,7 @@ const UserSchema = new mongoose.Schema({
     isAuthorized: { type: Boolean, default: false },
     isBanned: { type: Boolean, default: false },
     isBlockedBot: { type: Boolean, default: false },
+    updatesEnabled: { type: Boolean, default: true },
     appliedAt: { type: Date, default: Date.now }
 });
 
