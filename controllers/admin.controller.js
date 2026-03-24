@@ -238,13 +238,13 @@ async function getAllUsers() {
         // authorized: isAuthorized true, banned না, blocked না
         const authorized = await User.find({
             isAuthorized: true,
-            isBanned: false,
-            isBlockedBot: false
+            isBanned: { $ne: true },
+            isBlockedBot: { $ne: true }
         });
         // pending: isAuthorized false এবং banned না
         const pending = await User.find({
             isAuthorized: false,
-            isBanned: false
+            isBanned: { $ne: true }
         });
         return { authorized, pending };
     } catch (err) {
