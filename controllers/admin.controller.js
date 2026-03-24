@@ -320,13 +320,15 @@ async function saveLastUpdate(url, message) {
 // ==========================================
 //     GET RECENT UPDATES (last 5 min)
 // ==========================================
+// ==========================================
+//     GET ALL LAST UPDATES (No time limit)
+// ==========================================
 async function getRecentUpdates() {
     try {
-        const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-        const updates = await LastUpdate.find({ updatedAt: { $gte: fiveMinutesAgo } });
+        const updates = await LastUpdate.find({}).sort({ updatedAt: -1 });
         return updates;
     } catch (err) {
-        console.error("❌ Error fetching recent updates:", err.message);
+        console.error("❌ Error fetching updates:", err.message);
         return [];
     }
 }
