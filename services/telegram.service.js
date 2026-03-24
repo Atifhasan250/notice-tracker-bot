@@ -76,18 +76,35 @@ async function sendWithRetry(apiUrl, payload, chatId) {
 
 async function sendTelegramAlert(message) {
     const apiUrl = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+    const User = require('../models/user.model'); // Import User model
 
-    // অথোরাইজড ইউজারদের চ্যাট আইডি DB থেকে নিয়ে আসা হচ্ছে
-    const userChatIds = await getAuthorizedChatIds();
-
-    // সব secondary admin এর চ্যাট আইডি নিয়ে আসা হচ্ছে
+    // 1. Get everyone who might receive the message
     const dbAdmins = await getAllAdmins();
     const adminChatIds = dbAdmins.map(a => String(a.chatId));
 
-    // primary admin, secondary admins এবং authorized users সবাইকে মেসেজ পাঠানো হচ্ছে
-    const allChatIds = [...new Set([ADMIN_CHAT_ID, ...adminChatIds, ...userChatIds])];
+    // Combine Primary Admin, Secondary Admins, and everyone else
+    // We start with a full list of potential people
+    const potentialRecipients = [...new Set([ADMIN_CHAT_ID, ...adminChatIds])];
 
-    for (const chatId of allChatIds) {
+    // Add all authorized users to the potential list
+    const { authorized } = await require('../controllers/admin.controller').getAllUsers();
+    authorized.forEach(u => potentialRecipients.push(String(u.chatId)));
+
+    // 2. Filter that list: ONLY keep people who have updatesEnabled !== false
+    const finalRecipientList = [];
+
+    for (const chatId of [...new Set(potentialRecipients)]) {
+        const userStatus = await User.findOne({ chatId: Number(chatId) });
+
+        // If the user doesn't exist in DB (like maybe the Primary Admin), 
+        // OR if they exist and have updatesEnabled set to true, add them.
+        if (!userStatus || userStatus.updatesEnabled !== false) {
+            finalRecipientList.push(chatId);
+        }
+    }
+
+    // 3. Send the messages
+    for (const chatId of finalRecipientList) {
         const payload = {
             chat_id: chatId,
             text: message,
