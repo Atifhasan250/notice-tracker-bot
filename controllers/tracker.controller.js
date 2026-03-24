@@ -2,6 +2,7 @@ const { Site, TrackedUrl } = require('../models/tracker.model');
 const { getBrowser } = require('../services/browser.service');
 const { extractVisibleText } = require('../services/scraper.service');
 const { sendTelegramAlert } = require('../services/telegram.service');
+const { saveLastUpdate } = require('../controllers/admin.controller');
 
 // Memory to store the last known text of each website
 let websiteStates = {};
@@ -164,6 +165,8 @@ async function checkWebsites() {
                                 diffMessage;
 
                             await sendTelegramAlert(alertText);
+                            // সর্বশেষ আপডেট সেভ করা হচ্ছে /recent কমান্ডের জন্য
+                            await saveLastUpdate(url, alertText);
                         }
                     }
 

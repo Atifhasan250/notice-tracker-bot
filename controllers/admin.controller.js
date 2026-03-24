@@ -1,6 +1,7 @@
 const User = require('../models/user.model');
 const Admin = require('../models/admin.model');
 const { Site, TrackedUrl } = require('../models/tracker.model');
+const LastUpdate = require('../models/last.update.model');
 const { ADMIN_CHAT_ID } = require('../config/config');
 
 // ==========================================
@@ -36,10 +37,10 @@ async function addAdmin(chatId, fullName, username) {
             { upsert: true, returnDocument: 'after' }
         );
 
-        // users collection এ authorized user হিসেবেও add করা হচ্ছে
+        // users collection এ authorized user হিসেবেও add করা হচ্ছে, banned হলে unban হবে
         await User.findOneAndUpdate(
             { chatId: Number(chatId) },
-            { chatId: Number(chatId), fullName, username, isAuthorized: true },
+            { chatId: Number(chatId), fullName, username, isAuthorized: true, isBanned: false },
             { upsert: true, returnDocument: 'after' }
         );
 
@@ -200,12 +201,13 @@ async function approveUser(chatId) {
 
 // ==========================================
 //   ADD USER DIRECTLY (with or without apply)
+//   banned হলে automatically unban হবে
 // ==========================================
 async function addUser(chatId) {
     try {
         const user = await User.findOneAndUpdate(
             { chatId: Number(chatId) },
-            { chatId: Number(chatId), isAuthorized: true },
+            { chatId: Number(chatId), isAuthorized: true, isBanned: false },
             { upsert: true, returnDocument: 'after' }
         );
         return user;
@@ -233,8 +235,17 @@ async function removeUser(chatId) {
 // ==========================================
 async function getAllUsers() {
     try {
-        const authorized = await User.find({ isAuthorized: true });
-        const pending = await User.find({ isAuthorized: false });
+        // authorized: isAuthorized true, banned না, blocked না
+        const authorized = await User.find({
+            isAuthorized: true,
+            isBanned: false,
+            isBlockedBot: false
+        });
+        // pending: isAuthorized false এবং banned না
+        const pending = await User.find({
+            isAuthorized: false,
+            isBanned: false
+        });
         return { authorized, pending };
     } catch (err) {
         console.error("❌ Error fetching users:", err.message);
@@ -292,15 +303,63 @@ async function getAllUrls() {
 }
 
 // ==========================================
-//    GET AUTHORIZED CHAT IDS (for alerts)
+//     SAVE LAST UPDATE MESSAGE PER URL
+// ==========================================
+async function saveLastUpdate(url, message) {
+    try {
+        await LastUpdate.findOneAndUpdate(
+            { url: url },
+            { url, message, updatedAt: new Date() },
+            { upsert: true, returnDocument: 'after' }
+        );
+    } catch (err) {
+        console.error("❌ Error saving last update:", err.message);
+    }
+}
+
+// ==========================================
+//     GET RECENT UPDATES (last 5 min)
+// ==========================================
+async function getRecentUpdates() {
+    try {
+        const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+        const updates = await LastUpdate.find({ updatedAt: { $gte: fiveMinutesAgo } });
+        return updates;
+    } catch (err) {
+        console.error("❌ Error fetching recent updates:", err.message);
+        return [];
+    }
+}
+
+
+//    banned, blocked, updatesOff বাদ দেওয়া হচ্ছে
 // ==========================================
 async function getAuthorizedChatIds() {
     try {
-        const users = await User.find({ isAuthorized: true });
+        const users = await User.find({
+            isAuthorized: true,
+            isBanned: false,
+            isBlockedBot: false,
+            updatesEnabled: true
+        });
         return users.map(u => String(u.chatId));
     } catch (err) {
         console.error("❌ Error fetching authorized chat IDs:", err.message);
         return [];
+    }
+}
+
+// ==========================================
+//     SET UPDATES ENABLED/DISABLED
+// ==========================================
+async function setUpdatesEnabled(chatId, enabled) {
+    try {
+        await User.findOneAndUpdate(
+            { chatId: Number(chatId) },
+            { updatesEnabled: enabled }
+        );
+    } catch (err) {
+        console.error("❌ Error updating updates preference:", err.message);
     }
 }
 
@@ -316,6 +375,9 @@ module.exports = {
     unbanUser,
     setBlockedBot,
     getBlockedUsers,
+    setUpdatesEnabled,
+    saveLastUpdate,
+    getRecentUpdates,
     saveApplication,
     approveUser,
     addUser,

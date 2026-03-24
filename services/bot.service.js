@@ -12,6 +12,8 @@ const {
     unbanUser,
     setBlockedBot,
     getBlockedUsers,
+    setUpdatesEnabled,
+    getRecentUpdates,
     saveApplication,
     approveUser,
     addUser,
@@ -68,7 +70,7 @@ function setupBotCommands(bot) {
             return; // ইউজার অথোরাইজড হলে এখানেই থেমে যাবে, নিচের কোড রান করবে না
         }
 
-        const welcomeMessage = `Welcome to Examify Notice Tracker Bot. If any University changes their notice page, it'll notify you.\n\nIf you are not authorized, please use /apply command for applying to use the bot to the owner of this bot`;
+        const welcomeMessage = `Welcome to Examify Notice Tracker Bot. If any University changes their notice page, it'll notify you.\n\nIf you are not authorized, please use /apply command for applying to use the bot to the owner of this bot\n\nOnce authorized, you can use /updateoff to stop receiving alerts and /updateon to resume.`;
 
         bot.sendMessage(chatId, welcomeMessage);
     });
@@ -133,7 +135,79 @@ function setupBotCommands(bot) {
     });
 
     // ==========================================
-    // ৩. /approve <chatId> — যেকোনো অ্যাডমিন
+    // ৩. /updateoff — শুধু authorized user
+    // ==========================================
+    bot.onText(/^\/updateoff$/, async (msg) => {
+        const chatId = msg.chat.id;
+
+        if (!await isAuthorized(chatId)) {
+            bot.sendMessage(chatId, "⛔ You must be an authorized user to use this command.");
+            return;
+        }
+
+        const UserModel = require('../models/user.model');
+        const user = await UserModel.findOne({ chatId: Number(chatId) });
+
+        if (user && !user.updatesEnabled) {
+            bot.sendMessage(chatId, "ℹ️ Updates are already turned off for you.");
+            return;
+        }
+
+        await setUpdatesEnabled(chatId, false);
+        bot.sendMessage(chatId, "🔕 Updates turned off. You will no longer receive notice alerts.\n\nUse /updateon to turn them back on.");
+    });
+
+    // ==========================================
+    // ৪. /updateon — শুধু authorized user
+    // ==========================================
+    bot.onText(/^\/updateon$/, async (msg) => {
+        const chatId = msg.chat.id;
+
+        if (!await isAuthorized(chatId)) {
+            bot.sendMessage(chatId, "⛔ You must be an authorized user to use this command.");
+            return;
+        }
+
+        const UserModel = require('../models/user.model');
+        const user = await UserModel.findOne({ chatId: Number(chatId) });
+
+        if (user && user.updatesEnabled) {
+            bot.sendMessage(chatId, "ℹ️ Updates are already turned on for you.");
+            return;
+        }
+
+        await setUpdatesEnabled(chatId, true);
+        bot.sendMessage(chatId, "🔔 Updates turned on. You will now receive notice alerts again.");
+    });
+
+    // ==========================================
+    // ৫. /recent — শুধু authorized user
+    // ==========================================
+    bot.onText(/^\/recent$/, async (msg) => {
+        const chatId = msg.chat.id;
+
+        if (!await isAuthorized(chatId)) {
+            bot.sendMessage(chatId, "⛔ You must be an authorized user to use this command.");
+            return;
+        }
+
+        const updates = await getRecentUpdates();
+
+        if (updates.length === 0) {
+            bot.sendMessage(chatId, "ℹ️ No website changes detected in the last 5 minutes. Bot is running normally.");
+            return;
+        }
+
+        for (const update of updates) {
+            bot.sendMessage(chatId, update.message, {
+                parse_mode: "HTML",
+                disable_web_page_preview: true
+            }).catch(() => { });
+        }
+    });
+
+    // ==========================================
+    // ৬. /approve <chatId> — যেকোনো অ্যাডমিন
     // ==========================================
     bot.onText(/^\/approve (.+)$/, async (msg, match) => {
         const chatId = msg.chat.id;
@@ -224,9 +298,9 @@ function setupBotCommands(bot) {
         const { authorized, pending } = await getAllUsers();
         const blockedUsers = await getBlockedUsers();
 
-        // banned users কে pending list থেকে আলাদা করা হচ্ছে
-        const pendingOnly = pending.filter(u => !u.isBanned);
-        const bannedUsers = pending.filter(u => u.isBanned);
+        // banned users সব isBanned:true যাদের
+        const User = require('../models/user.model');
+        const bannedUsers = await User.find({ isBanned: true });
 
         const formatUser = (u, i) => {
             const username = u.username !== 'No username' ? ` | ${u.username}` : '';
@@ -243,12 +317,12 @@ function setupBotCommands(bot) {
             authorized.forEach((u, i) => { message += formatUser(u, i); });
         }
 
-        // ২. Pending Users (banned বাদে)
-        message += `\n⏳ <b>Pending Users (${pendingOnly.length})</b>\n`;
-        if (pendingOnly.length === 0) {
+        // ২. Pending Users
+        message += `\n⏳ <b>Pending Users (${pending.length})</b>\n`;
+        if (pending.length === 0) {
             message += "— None\n";
         } else {
-            pendingOnly.forEach((u, i) => { message += formatUser(u, i); });
+            pending.forEach((u, i) => { message += formatUser(u, i); });
         }
 
         // ৩. Banned Users
