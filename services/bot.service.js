@@ -469,7 +469,80 @@ function setupBotCommands(bot) {
     });
 
     // ==========================================
-    // ১৩. /adminhelp — যেকোনো অ্যাডমিন
+    // ১৩. /msgadmins <msg> — শুধু primary admin
+    // ==========================================
+    bot.onText(/^\/msgadmins (.+)$/s, async (msg, match) => {
+        const chatId = msg.chat.id;
+
+        if (!isPrimaryAdmin(chatId)) {
+            bot.sendMessage(chatId, "⛔ Only the primary admin can use this command.");
+            return;
+        }
+
+        const userMessage = match[1].trim();
+        const formattedMessage = `📢 This is a message from Admin:\n\n${userMessage}`;
+
+        const dbAdmins = await getAllAdmins();
+
+        if (dbAdmins.length === 0) {
+            bot.sendMessage(chatId, "⚠️ No secondary admins found to message.");
+            return;
+        }
+
+        let successCount = 0;
+        for (const admin of dbAdmins) {
+            try {
+                await bot.sendMessage(String(admin.chatId), formattedMessage);
+                successCount++;
+            } catch (err) {
+                console.error(`Failed to message admin ${admin.chatId}:`, err.message);
+            }
+        }
+
+        bot.sendMessage(chatId, `✅ Message sent to ${successCount}/${dbAdmins.length} secondary admins.`);
+    });
+
+    // ==========================================
+    // ১৪. /msgall <msg> — শুধু primary admin
+    // ==========================================
+    bot.onText(/^\/msgall (.+)$/s, async (msg, match) => {
+        const chatId = msg.chat.id;
+
+        if (!isPrimaryAdmin(chatId)) {
+            bot.sendMessage(chatId, "⛔ Only the primary admin can use this command.");
+            return;
+        }
+
+        const userMessage = match[1].trim();
+        const formattedMessage = `📢 This is a message from Admin:\n\n${userMessage}`;
+
+        const { ADMIN_CHAT_ID } = require('../config/config');
+        const dbAdmins = await getAllAdmins();
+        const authorizedChatIds = await require('../controllers/admin.controller').getAuthorizedChatIds();
+
+        // সব secondary admin এবং authorized user দের একসাথে মেসেজ পাঠানো হচ্ছে (duplicate ছাড়া)
+        const allChatIds = [...new Set([...dbAdmins.map(a => String(a.chatId)), ...authorizedChatIds])];
+
+        if (allChatIds.length === 0) {
+            bot.sendMessage(chatId, "⚠️ No users or admins found to message.");
+            return;
+        }
+
+        let successCount = 0;
+        for (const id of allChatIds) {
+            try {
+                await bot.sendMessage(id, formattedMessage);
+                successCount++;
+            } catch (err) {
+                console.error(`Failed to message ${id}:`, err.message);
+            }
+        }
+
+        bot.sendMessage(chatId, `✅ Message sent to ${successCount}/${allChatIds.length} users and admins.`);
+    });
+
+    // ==========================================
+    // ১৫. /adminhelp — যেকোনো অ্যাডমিন
     // ==========================================
     bot.onText(/^\/adminhelp$/, async (msg) => {
         const chatId = msg.chat.id;
@@ -503,6 +576,8 @@ function setupBotCommands(bot) {
             message += `/listadmins — List all admins\n`;
             message += `/addnewadmin &lt;chatId&gt; — Add a new secondary admin\n`;
             message += `/removeadmin &lt;chatId&gt; — Remove a secondary admin\n`;
+            message += `/msgadmins &lt;msg&gt; — Send a message to all secondary admins\n`;
+            message += `/msgall &lt;msg&gt; — Send a message to all users and admins\n`;
         }
 
         bot.sendMessage(chatId, message, { parse_mode: "HTML" });

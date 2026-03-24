@@ -115,8 +115,14 @@ async function checkWebsites() {
                 const previousText = websiteStates[url] || "";
 
                 // শুধু প্রথম ২০ লাইন চেক করা হচ্ছে পরিবর্তনের জন্য
-                const currentTop = currentText.split('\n').filter(l => l.trim() !== '').slice(0, 20).join('\n');
-                const previousTop = previousText.split('\n').filter(l => l.trim() !== '').slice(0, 20).join('\n');
+                // whitespace normalize করা হচ্ছে যাতে false positive না আসে
+                const normalizeLines = (text) => text
+                    .split('\n')
+                    .map(l => l.trim().replace(/\s+/g, ' '))
+                    .filter(l => l.length > 0);
+
+                const currentTop = normalizeLines(currentText).slice(0, 20).join('\n');
+                const previousTop = normalizeLines(previousText).slice(0, 20).join('\n');
 
                 if (currentText !== previousText) {
                     const isInitialRun = (previousText === "");
@@ -132,16 +138,12 @@ async function checkWebsites() {
                     } else {
                         // শুধুমাত্র প্রথম ২০ লাইনে পরিবর্তন হলেই নোটিফিকেশন পাঠানো হবে
                         if (currentTop !== previousTop) {
-                            const currentTopLines = currentTop.split('\n').filter(l => l.trim() !== '');
-                            const previousTopLines = previousTop.split('\n').filter(l => l.trim() !== '');
-
-                            // নতুন ৬ লাইন এবং আগের ৬ লাইন দেখানো হচ্ছে
-                            const newLines = currentTopLines.slice(0, 6).join('\n');
-                            const oldLines = previousTopLines.slice(0, 6).join('\n');
+                            const currentTopLines = normalizeLines(currentText).slice(0, 6).join('\n');
+                            const previousTopLines = normalizeLines(previousText).slice(0, 6).join('\n');
 
                             let diffMessage = "";
-                            diffMessage += `🟢 <b>নতুন যোগ হয়েছে:</b>\n${newLines}\n\n`;
-                            diffMessage += `🔴 <b>ডিলিট হয়েছে:</b>\n${oldLines}\n\n`;
+                            diffMessage += `🟢 <b>নতুন যোগ হয়েছে:</b>\n${currentTopLines}\n\n`;
+                            diffMessage += `🔴 <b>ডিলিট হয়েছে:</b>\n${previousTopLines}\n\n`;
 
                             const alertText =
                                 `🔔 <b>ওয়েবসাইটে পরিবর্তন শনাক্ত হয়েছে!</b>\n\n` +
