@@ -10,6 +10,8 @@ const {
     isBannedUser,
     banUser,
     unbanUser,
+    setBlockedBot,
+    getBlockedUsers,
     saveApplication,
     approveUser,
     addUser,
@@ -220,27 +222,49 @@ function setupBotCommands(bot) {
         }
 
         const { authorized, pending } = await getAllUsers();
+        const blockedUsers = await getBlockedUsers();
+
+        // banned users কে pending list থেকে আলাদা করা হচ্ছে
+        const pendingOnly = pending.filter(u => !u.isBanned);
+        const bannedUsers = pending.filter(u => u.isBanned);
+
+        const formatUser = (u, i) => {
+            const username = u.username !== 'No username' ? ` | ${u.username}` : '';
+            return `\n${i + 1}. ${u.fullName}${username}\n    <code>${u.chatId}</code>\n`;
+        };
 
         let message = "👥 <b>User List</b>\n\n";
 
+        // ১. Authorized Users
         message += `✅ <b>Authorized Users (${authorized.length})</b>\n`;
         if (authorized.length === 0) {
             message += "— None\n";
         } else {
-            authorized.forEach((u, i) => {
-                const username = u.username !== 'No username' ? ` | ${u.username}` : '';
-                message += `\n${i + 1}. ${u.fullName}${username}\n    <code>${u.chatId}</code>\n`;
-            });
+            authorized.forEach((u, i) => { message += formatUser(u, i); });
         }
 
-        message += `\n⏳ <b>Pending Users (${pending.length})</b>\n`;
-        if (pending.length === 0) {
+        // ২. Pending Users (banned বাদে)
+        message += `\n⏳ <b>Pending Users (${pendingOnly.length})</b>\n`;
+        if (pendingOnly.length === 0) {
             message += "— None\n";
         } else {
-            pending.forEach((u, i) => {
-                const username = u.username !== 'No username' ? ` | ${u.username}` : '';
-                message += `\n${i + 1}. ${u.fullName}${username}\n    <code>${u.chatId}</code>\n`;
-            });
+            pendingOnly.forEach((u, i) => { message += formatUser(u, i); });
+        }
+
+        // ৩. Banned Users
+        message += `\n🚫 <b>Banned Users (${bannedUsers.length})</b>\n`;
+        if (bannedUsers.length === 0) {
+            message += "— None\n";
+        } else {
+            bannedUsers.forEach((u, i) => { message += formatUser(u, i); });
+        }
+
+        // ৪. Blocked Bot Users
+        message += `\n🔇 <b>Blocked the Bot (${blockedUsers.length})</b>\n`;
+        if (blockedUsers.length === 0) {
+            message += "— None\n";
+        } else {
+            blockedUsers.forEach((u, i) => { message += formatUser(u, i); });
         }
 
         bot.sendMessage(chatId, message, { parse_mode: "HTML" });

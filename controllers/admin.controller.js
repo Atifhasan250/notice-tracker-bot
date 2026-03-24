@@ -81,8 +81,34 @@ async function getAllAdmins() {
 }
 
 // ==========================================
-//         BAN A USER
+//     SET USER BOT BLOCKED/UNBLOCKED STATUS
 // ==========================================
+async function setBlockedBot(chatId, isBlocked) {
+    try {
+        await User.findOneAndUpdate(
+            { chatId: Number(chatId) },
+            { isBlockedBot: isBlocked },
+            { upsert: false }
+        );
+    } catch (err) {
+        console.error("❌ Error updating blocked status:", err.message);
+    }
+}
+
+// ==========================================
+//         GET ALL BLOCKED BOT USERS
+// ==========================================
+async function getBlockedUsers() {
+    try {
+        const users = await User.find({ isBlockedBot: true });
+        return users;
+    } catch (err) {
+        console.error("❌ Error fetching blocked users:", err.message);
+        return [];
+    }
+}
+
+
 async function banUser(chatId) {
     try {
         const user = await User.findOneAndUpdate(
@@ -288,6 +314,8 @@ module.exports = {
     isBannedUser,
     banUser,
     unbanUser,
+    setBlockedBot,
+    getBlockedUsers,
     saveApplication,
     approveUser,
     addUser,

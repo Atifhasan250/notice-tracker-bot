@@ -138,12 +138,24 @@ async function checkWebsites() {
                     } else {
                         // শুধুমাত্র প্রথম ২০ লাইনে পরিবর্তন হলেই নোটিফিকেশন পাঠানো হবে
                         if (currentTop !== previousTop) {
-                            const currentTopLines = normalizeLines(currentText).slice(0, 6).join('\n');
-                            const previousTopLines = normalizeLines(previousText).slice(0, 6).join('\n');
+                            const currentTopLines = normalizeLines(currentText).slice(0, 20);
+                            const previousTopLines = normalizeLines(previousText).slice(0, 20);
+
+                            // নতুন লাইনে কোনটা আসলেই পরিবর্তন হয়েছে সেটা চিহ্নিত করা হচ্ছে
+                            const markedNew = currentTopLines.slice(0, 6).map((line, i) => {
+                                const isChanged = line !== previousTopLines[i];
+                                return isChanged ? `👉 ${line}` : `    ${line}`;
+                            }).join('\n');
+
+                            // আগের লাইনে কোনটা পরিবর্তন হয়েছিল সেটা চিহ্নিত করা হচ্ছে
+                            const markedOld = previousTopLines.slice(0, 6).map((line, i) => {
+                                const isChanged = line !== currentTopLines[i];
+                                return isChanged ? `👉 ${line}` : `    ${line}`;
+                            }).join('\n');
 
                             let diffMessage = "";
-                            diffMessage += `🟢 <b>নতুন যোগ হয়েছে:</b>\n${currentTopLines}\n\n`;
-                            diffMessage += `🔴 <b>ডিলিট হয়েছে:</b>\n${previousTopLines}\n\n`;
+                            diffMessage += `🟢 <b>নতুন যোগ হয়েছে:</b>\n<code>${markedNew}</code>\n\n`;
+                            diffMessage += `🔴 <b>ডিলিট হয়েছে:</b>\n<code>${markedOld}</code>\n\n`;
 
                             const alertText =
                                 `🔔 <b>ওয়েবসাইটে পরিবর্তন শনাক্ত হয়েছে!</b>\n\n` +
