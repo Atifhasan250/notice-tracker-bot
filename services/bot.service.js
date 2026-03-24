@@ -191,7 +191,7 @@ function setupBotCommands(bot) {
             return;
         }
 
-        const updates = await getRecentUpdates();
+        const updates = await LastUpdate.find({}).sort({ updatedAt: -1 }).limit(10);
 
         if (updates.length === 0) {
             bot.sendMessage(chatId, "ℹ️ No notice updates found in the database yet.");
