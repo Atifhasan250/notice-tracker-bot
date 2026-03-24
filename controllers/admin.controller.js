@@ -1,6 +1,6 @@
 const User = require('../models/user.model');
 const Admin = require('../models/admin.model');
-const { TrackedUrl } = require('../models/tracker.model');
+const { Site, TrackedUrl } = require('../models/tracker.model');
 const { ADMIN_CHAT_ID } = require('../config/config');
 
 // ==========================================
@@ -240,6 +240,11 @@ async function addUrl(url) {
 async function removeUrl(url) {
     try {
         const result = await TrackedUrl.findOneAndDelete({ url: url });
+        if (result) {
+            // TrackedUrl থেকে মুছে দেওয়ার পর Site collection থেকেও মুছে দেওয়া হচ্ছে
+            await Site.findOneAndDelete({ url: url });
+            console.log(`🗑️ Removed URL and site data from DB: ${url}`);
+        }
         return !!result;
     } catch (err) {
         console.error("❌ Error removing URL:", err.message);

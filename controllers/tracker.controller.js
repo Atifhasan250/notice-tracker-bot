@@ -1,4 +1,3 @@
-const Diff = require('diff');
 const { Site, TrackedUrl } = require('../models/tracker.model');
 const { getBrowser } = require('../services/browser.service');
 const { extractVisibleText } = require('../services/scraper.service');
@@ -115,18 +114,12 @@ async function checkWebsites() {
                 const currentText = extractVisibleText(html);
                 const previousText = websiteStates[url] || "";
 
+                // শুধু প্রথম ২০ লাইন চেক করা হচ্ছে পরিবর্তনের জন্য
+                const currentTop = currentText.split('\n').filter(l => l.trim() !== '').slice(0, 20).join('\n');
+                const previousTop = previousText.split('\n').filter(l => l.trim() !== '').slice(0, 20).join('\n');
+
                 if (currentText !== previousText) {
                     const isInitialRun = (previousText === "");
-
-                    const differences = Diff.diffLines(previousText, currentText);
-                    let addedLines = [];
-                    let deletedLines = [];
-
-                    differences.forEach(part => {
-                        const lines = part.value.split('\n').filter(l => l.trim() !== '');
-                        if (part.added) addedLines.push(...lines);
-                        if (part.removed) deletedLines.push(...lines);
-                    });
 
                     const currentTime = new Date().toLocaleString('en-US', { timeZone: 'Asia/Dhaka' });
 
@@ -137,18 +130,18 @@ async function checkWebsites() {
                             `⏰ <b>সময়:</b> ${currentTime}`;
                         await sendTelegramAlert(alertText);
                     } else {
-                        if (addedLines.length > 0 || deletedLines.length > 0) {
+                        // শুধুমাত্র প্রথম ২০ লাইনে পরিবর্তন হলেই নোটিফিকেশন পাঠানো হবে
+                        if (currentTop !== previousTop) {
+                            const currentTopLines = currentTop.split('\n').filter(l => l.trim() !== '');
+                            const previousTopLines = previousTop.split('\n').filter(l => l.trim() !== '');
+
+                            // নতুন ৬ লাইন এবং আগের ৬ লাইন দেখানো হচ্ছে
+                            const newLines = currentTopLines.slice(0, 6).join('\n');
+                            const oldLines = previousTopLines.slice(0, 6).join('\n');
+
                             let diffMessage = "";
-
-                            if (addedLines.length > 0) {
-                                diffMessage += `🟢 <b>নতুন যোগ হয়েছে:</b>\n`;
-                                diffMessage += `${addedLines.slice(0, 7).join('\n')}\n\n`;
-                            }
-
-                            if (deletedLines.length > 0) {
-                                diffMessage += `🔴 <b>ডিলিট হয়েছে:</b>\n`;
-                                diffMessage += `${deletedLines.slice(0, 3).join('\n')}\n\n`;
-                            }
+                            diffMessage += `🟢 <b>নতুন যোগ হয়েছে:</b>\n${newLines}\n\n`;
+                            diffMessage += `🔴 <b>ডিলিট হয়েছে:</b>\n${oldLines}\n\n`;
 
                             const alertText =
                                 `🔔 <b>ওয়েবসাইটে পরিবর্তন শনাক্ত হয়েছে!</b>\n\n` +
