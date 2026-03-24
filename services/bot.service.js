@@ -193,13 +193,13 @@ function setupBotCommands(bot) {
 
         const updates = await getRecentUpdates();
 
-        // Send a header message
-        bot.sendMessage(chatId, `📂 <b>Showing last updates for ${updates.length} websites:</b>`, { parse_mode: "HTML" });
-
         if (updates.length === 0) {
             bot.sendMessage(chatId, "ℹ️ No notice updates found in the database yet.");
             return;
         }
+
+        // Send a header message
+        bot.sendMessage(chatId, `📂 <b>Showing last updates for ${updates.length} websites:</b>`, { parse_mode: "HTML" });
 
         for (const update of updates) {
             bot.sendMessage(chatId, update.message, {
