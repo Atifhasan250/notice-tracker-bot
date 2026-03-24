@@ -154,8 +154,8 @@ async function checkWebsites() {
                             }).join('\n');
 
                             let diffMessage = "";
-                            diffMessage += `🟢 <b>নতুন যোগ হয়েছে:</b>\n<code>${markedNew}</code>\n\n`;
-                            diffMessage += `🔴 <b>ডিলিট হয়েছে:</b>\n<code>${markedOld}</code>\n\n`;
+                            diffMessage += `🟢 <b>নতুন যোগ হয়েছে:</b>\n<pre>${markedNew}</pre>\n\n`;
+                            diffMessage += `🔴 <b>ডিলিট হয়েছে:</b>\n<pre>${markedOld}</pre>\n\n`;
 
                             const alertText =
                                 `🔔 <b>ওয়েবসাইটে পরিবর্তন শনাক্ত হয়েছে!</b>\n\n` +
