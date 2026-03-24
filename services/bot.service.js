@@ -273,7 +273,7 @@ function setupBotCommands(bot) {
     // ==========================================
     // ৭. /addurl <url> — যেকোনো অ্যাডমিন
     // ==========================================
-    bot.onText(/^\/addurl (.+)$/, async (msg, match) => {
+    bot.onText(/^\/addurl ([\s\S]+)$/, async (msg, match) => {
         const chatId = msg.chat.id;
 
         if (!await isAdmin(chatId)) {
@@ -281,13 +281,23 @@ function setupBotCommands(bot) {
             return;
         }
 
-        const url = match[1].trim();
-        const success = await addUrl(url);
+        // একাধিক URL নতুন লাইনে দেওয়া সাপোর্ট করা হচ্ছে
+        const urls = match[1].split('\n').map(u => u.trim()).filter(u => u.length > 0);
 
-        if (success) {
-            bot.sendMessage(chatId, `✅ URL added successfully:\n${url}`);
+        if (urls.length === 1) {
+            const success = await addUrl(urls[0]);
+            if (success) {
+                bot.sendMessage(chatId, `✅ URL added successfully:\n${urls[0]}`);
+            } else {
+                bot.sendMessage(chatId, `❌ Failed to add URL. It may already exist.`);
+            }
         } else {
-            bot.sendMessage(chatId, `❌ Failed to add URL. It may already exist.`);
+            let results = '';
+            for (const url of urls) {
+                const success = await addUrl(url);
+                results += success ? `✅ ${url}\n` : `❌ ${url} (already exists or failed)\n`;
+            }
+            bot.sendMessage(chatId, `<b>Bulk URL Add Results:</b>\n\n${results}`, { parse_mode: "HTML" });
         }
     });
 
@@ -591,7 +601,8 @@ function setupBotCommands(bot) {
 
         message += `🔗 <b>URL Management</b>\n`;
         message += `/listurls — List all tracked URLs\n`;
-        message += `/addurl &lt;url&gt; — Add a new URL to track\n`;
+        message += `/addurl &lt;url&gt; — Add a URL to track\n`;
+        message += `/addurl &lt;url1&gt;\n&lt;url2&gt;\n&lt;url3&gt; — Add multiple URLs at once (one per line)\n`;
         message += `/removeurl &lt;url&gt; — Remove a tracked URL\n`;
 
         // primary admin এর জন্য extra commands দেখানো হচ্ছে

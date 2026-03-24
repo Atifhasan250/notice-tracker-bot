@@ -142,13 +142,13 @@ async function checkWebsites() {
                             const previousTopLines = normalizeLines(previousText).slice(0, 20);
 
                             // নতুন লাইনে কোনটা আসলেই পরিবর্তন হয়েছে সেটা চিহ্নিত করা হচ্ছে
-                            const markedNew = currentTopLines.slice(0, 6).map((line, i) => {
+                            const markedNew = currentTopLines.slice(0, 4).map((line, i) => {
                                 const isChanged = line !== previousTopLines[i];
                                 return isChanged ? `👉 ${line}` : `    ${line}`;
                             }).join('\n');
 
                             // আগের লাইনে কোনটা পরিবর্তন হয়েছিল সেটা চিহ্নিত করা হচ্ছে
-                            const markedOld = previousTopLines.slice(0, 6).map((line, i) => {
+                            const markedOld = previousTopLines.slice(0, 4).map((line, i) => {
                                 const isChanged = line !== currentTopLines[i];
                                 return isChanged ? `👉 ${line}` : `    ${line}`;
                             }).join('\n');
